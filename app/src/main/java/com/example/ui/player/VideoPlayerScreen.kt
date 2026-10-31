@@ -43,8 +43,15 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -53,6 +60,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +71,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableIntStateOf
+import android.util.TypedValue
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.compose.ui.text.style.TextAlign
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.DefaultDataSource
@@ -123,6 +135,54 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.math.abs
+
+data class VideoTrackItem(
+    val group: Tracks.Group,
+    val trackIndex: Int,
+    val label: String,
+    val isSelected: Boolean,
+    val width: Int,
+    val height: Int,
+    val bitrate: Int
+)
+
+enum class VideoScaleMode(val label: String, val resizeMode: Int) {
+    FIT("Fit Screen", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    ZOOM("Zoom / Fill", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+    STRETCH("Stretch", AspectRatioFrameLayout.RESIZE_MODE_FILL)
+}
+
+enum class SubtitleSize(val label: String, val sizeSp: Float) {
+    SMALL("Small", 14f),
+    MEDIUM("Normal", 18f),
+    LARGE("Large", 24f),
+    EXTRA_LARGE("Huge", 30f)
+}
+
+fun formatVideoTrackLabel(format: androidx.media3.common.Format, index: Int): String {
+    val res = when {
+        format.height >= 2160 -> "4K UHD (${format.width}x${format.height})"
+        format.height >= 1440 -> "1440p QHD (${format.width}x${format.height})"
+        format.height >= 1080 -> "1080p FHD (${format.width}x${format.height})"
+        format.height >= 720 -> "720p HD (${format.width}x${format.height})"
+        format.height >= 480 -> "480p SD (${format.width}x${format.height})"
+        format.height >= 360 -> "360p (${format.width}x${format.height})"
+        format.height > 0 -> "${format.height}p (${format.width}x${format.height})"
+        !format.label.isNullOrBlank() -> format.label!!
+        else -> "Track ${index + 1}"
+    }
+
+    val bitrate = if (format.bitrate > 0) {
+        val mbps = format.bitrate / 1_000_000f
+        if (mbps >= 1.0f) String.format(java.util.Locale.US, "%.1f Mbps", mbps)
+        else "${format.bitrate / 1000} kbps"
+    } else null
+
+    val fps = if (format.frameRate > 0) "${format.frameRate.toInt()}fps" else null
+    val details = listOfNotNull(bitrate, fps).joinToString(" • ")
+
+    return if (details.isNotBlank()) "$res • $details" else res
+}
 
 data class AudioTrackItem(
     val group: Tracks.Group,
@@ -213,6 +273,8 @@ fun VideoPlayerScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var isDraggingSlider by remember { mutableStateOf(false) }
+    var sliderPositionMs by remember { mutableFloatStateOf(0f) }
     var isBuffering by remember { mutableStateOf(true) }
     var playbackError by remember { mutableStateOf<String?>(null) }
 
@@ -222,8 +284,16 @@ fun VideoPlayerScreen(
 
     var playbackSpeed by remember { mutableFloatStateOf(defaultSpeed) }
     var showSpeedMenu by remember { mutableStateOf(false) }
-    var showAudioMenu by remember { mutableStateOf(false) }
-    var showSubtitleMenu by remember { mutableStateOf(false) }
+    var showVideoDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
+    var showSubtitleDialog by remember { mutableStateOf(false) }
+
+    var currentScaleMode by remember { mutableStateOf(VideoScaleMode.FIT) }
+    var subtitleSize by remember { mutableStateOf(SubtitleSize.MEDIUM) }
+    var volumeBoostPercent by remember { mutableIntStateOf(0) }
+    var loudnessEnhancer by remember { mutableStateOf<android.media.audiofx.LoudnessEnhancer?>(null) }
+    var audioDelayMs by remember { mutableLongStateOf(0L) }
+    var subtitleDelayMs by remember { mutableLongStateOf(0L) }
 
     var currentTracks by remember { mutableStateOf<Tracks?>(null) }
 
@@ -264,6 +334,9 @@ fun VideoPlayerScreen(
     // Initialize ExoPlayer with AudioAttributes, MediaSourceFactory & Audio Focus
     LaunchedEffect(video) {
         val currentVideo = video ?: return@LaunchedEffect
+        if (durationMs == 0L && currentVideo.durationMs > 0L) {
+            durationMs = currentVideo.durationMs
+        }
         if (player != null) return@LaunchedEffect
 
         val audioAttributes = AudioAttributes.Builder()
@@ -286,24 +359,13 @@ fun VideoPlayerScreen(
 
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
-            .setMp4ExtractorFlags(
-                Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS or
-                Mp4Extractor.FLAG_READ_SEF_DATA
-            )
-            .setFragmentedMp4ExtractorFlags(
-                FragmentedMp4Extractor.FLAG_WORKAROUND_EVERY_VIDEO_FRAME_IS_SYNC_FRAME or
-                FragmentedMp4Extractor.FLAG_WORKAROUND_IGNORE_TFDT_BOX
-            )
-            .setMatroskaExtractorFlags(
-                MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES
-            )
+            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+            .setFlacExtractorFlags(FlacExtractor.FLAG_DISABLE_ID3_METADATA)
             .setTsExtractorFlags(
                 DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
                 DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
             )
-            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
-            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
-            .setFlacExtractorFlags(FlacExtractor.FLAG_DISABLE_ID3_METADATA)
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
@@ -380,7 +442,27 @@ fun VideoPlayerScreen(
                         isBuffering = state == Player.STATE_BUFFERING
                         if (state == Player.STATE_READY) {
                             playbackError = null
-                            durationMs = duration.coerceAtLeast(0L)
+                            val dur = duration
+                            if (dur > 0 && dur != C.TIME_UNSET && !isLive) {
+                                durationMs = dur
+                            }
+                        }
+                    }
+
+                    override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                        val dur = duration
+                        if (dur > 0 && dur != C.TIME_UNSET && !isLive) {
+                            durationMs = dur
+                        }
+                    }
+
+                    override fun onPositionDiscontinuity(
+                        oldPosition: Player.PositionInfo,
+                        newPosition: Player.PositionInfo,
+                        reason: Int
+                    ) {
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                            currentPositionMs = newPosition.positionMs.coerceAtLeast(0L)
                         }
                     }
 
@@ -448,22 +530,44 @@ fun VideoPlayerScreen(
         }
     }
 
-    // Periodic time polling
-    LaunchedEffect(player, isPlaying) {
+    // Periodic time polling (does not overwrite slider position while user is dragging)
+    LaunchedEffect(player, isPlaying, isDraggingSlider) {
         while (true) {
-            player?.let {
-                currentPositionMs = it.currentPosition.coerceAtLeast(0L)
-                if (it.duration > 0 && !isLive) durationMs = it.duration
+            player?.let { p ->
+                if (!isDraggingSlider) {
+                    currentPositionMs = p.currentPosition.coerceAtLeast(0L)
+                }
+                val dur = p.duration
+                if (dur > 0 && dur != C.TIME_UNSET && !isLive) {
+                    durationMs = dur
+                }
             }
-            delay(500)
+            delay(250)
         }
     }
 
-    // Auto-hide controls after 4 seconds
-    LaunchedEffect(controlsVisible) {
-        if (controlsVisible && !isControlsLocked) {
+    // Auto-hide controls after 4 seconds of inactivity (only when playing and not seeking)
+    LaunchedEffect(controlsVisible, isDraggingSlider, isPlaying) {
+        if (controlsVisible && !isControlsLocked && !isDraggingSlider && isPlaying) {
             delay(4000)
             controlsVisible = false
+        }
+    }
+
+    // Volume Boost (LoudnessEnhancer) attachment
+    LaunchedEffect(player, volumeBoostPercent) {
+        val p = player ?: return@LaunchedEffect
+        val sessionId = p.audioSessionId
+        if (sessionId != C.AUDIO_SESSION_ID_UNSET) {
+            try {
+                if (loudnessEnhancer == null) {
+                    loudnessEnhancer = android.media.audiofx.LoudnessEnhancer(sessionId)
+                }
+                loudnessEnhancer?.let { enhancer ->
+                    enhancer.setTargetGain(volumeBoostPercent * 10)
+                    enhancer.enabled = volumeBoostPercent > 0
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -474,6 +578,10 @@ fun VideoPlayerScreen(
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         } else {
             saveProgress()
+            try {
+                loudnessEnhancer?.release()
+            } catch (_: Exception) {}
+            loudnessEnhancer = null
             player?.stop()
             player?.release()
             player = null
@@ -484,6 +592,10 @@ fun VideoPlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             saveProgress()
+            try {
+                loudnessEnhancer?.release()
+            } catch (_: Exception) {}
+            loudnessEnhancer = null
             player?.stop()
             player?.release()
             player = null
@@ -492,6 +604,31 @@ fun VideoPlayerScreen(
     }
 
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    // Parse Video Tracks
+    val availableVideoTracks = remember(currentTracks) {
+        val list = mutableListOf<VideoTrackItem>()
+        currentTracks?.groups?.forEach { group ->
+            if (group.type == C.TRACK_TYPE_VIDEO) {
+                for (i in 0 until group.length) {
+                    val format = group.getTrackFormat(i)
+                    val label = formatVideoTrackLabel(format, list.size)
+                    list.add(
+                        VideoTrackItem(
+                            group = group,
+                            trackIndex = i,
+                            label = label,
+                            isSelected = group.isTrackSelected(i),
+                            width = format.width,
+                            height = format.height,
+                            bitrate = format.bitrate
+                        )
+                    )
+                }
+            }
+        }
+        list.sortedByDescending { it.height * 10000 + it.bitrate }
+    }
 
     // Parse Audio Tracks
     val availableAudioTracks = remember(currentTracks) {
@@ -525,6 +662,16 @@ fun VideoPlayerScreen(
         list
     }
 
+    val hasAudioOverride = remember(player?.trackSelectionParameters) {
+        player?.trackSelectionParameters?.overrides?.values?.any { it.type == C.TRACK_TYPE_AUDIO } == true
+    }
+    val hasVideoOverride = remember(player?.trackSelectionParameters) {
+        player?.trackSelectionParameters?.overrides?.values?.any { it.type == C.TRACK_TYPE_VIDEO } == true
+    }
+    val hasSubtitleDisabled = remember(player?.trackSelectionParameters) {
+        player?.trackSelectionParameters?.disabledTrackTypes?.contains(C.TRACK_TYPE_TEXT) == true
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -537,10 +684,24 @@ fun VideoPlayerScreen(
                 PlayerView(ctx).apply {
                     useController = false
                     this.player = player
+                    resizeMode = currentScaleMode.resizeMode
+                    subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleSize.sizeSp)
+                    subtitleView?.setStyle(
+                        CaptionStyleCompat(
+                            android.graphics.Color.WHITE,
+                            android.graphics.Color.argb(160, 0, 0, 0),
+                            android.graphics.Color.TRANSPARENT,
+                            CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+                            android.graphics.Color.BLACK,
+                            null
+                        )
+                    )
                 }
             },
             update = { playerView ->
                 playerView.player = player
+                playerView.resizeMode = currentScaleMode.resizeMode
+                playerView.subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, subtitleSize.sizeSp)
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -561,11 +722,16 @@ fun VideoPlayerScreen(
                                 val skipIntervalMs = skipIntervalSec * 1000L
                                 player?.let { p ->
                                     if (offset.x < width / 2) {
-                                        p.seekTo((p.currentPosition - skipIntervalMs).coerceAtLeast(0L))
+                                        val newPos = (p.currentPosition - skipIntervalMs).coerceAtLeast(0L)
+                                        currentPositionMs = newPos
+                                        p.seekTo(newPos)
                                         gestureOverlayText = "-${skipIntervalSec}s"
                                         gestureOverlayIcon = Icons.Default.FastRewind
                                     } else {
-                                        p.seekTo((p.currentPosition + skipIntervalMs).coerceAtMost(p.duration))
+                                        val dur = if (durationMs > 0) durationMs else (p.duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+                                        val newPos = (p.currentPosition + skipIntervalMs).coerceAtMost(dur)
+                                        currentPositionMs = newPos
+                                        p.seekTo(newPos)
                                         gestureOverlayText = "+${skipIntervalSec}s"
                                         gestureOverlayIcon = Icons.Default.FastForward
                                     }
@@ -836,131 +1002,41 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    Row {
-                        // Audio Track Selector
-                        Box {
-                            val hasAudioOverride = remember(player?.trackSelectionParameters) {
-                                player?.trackSelectionParameters?.overrides?.values?.any { it.type == C.TRACK_TYPE_AUDIO } == true
-                            }
-
-                            IconButton(
-                                onClick = { showAudioMenu = true },
-                                modifier = Modifier.testTag("player_audio_tracks_btn")
-                            ) {
-                                Icon(Icons.Default.Audiotrack, contentDescription = "Audio Tracks", tint = Color.White)
-                            }
-                            DropdownMenu(
-                                expanded = showAudioMenu,
-                                onDismissRequest = { showAudioMenu = false }
-                            ) {
-                                // Always show Auto option to allow resetting back to automatic selection
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (!hasAudioOverride) {
-                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = ElectricViolet)
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                            }
-                                            Text("Auto (Default)", fontWeight = if (!hasAudioOverride) FontWeight.Bold else FontWeight.Normal)
-                                        }
-                                    },
-                                    onClick = {
-                                        try {
-                                            player?.let { p ->
-                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                                                    .build()
-                                            }
-                                        } catch (_: Exception) {}
-                                        showAudioMenu = false
-                                    },
-                                    modifier = Modifier.testTag("audio_track_auto")
-                                )
-
-                                availableAudioTracks.forEachIndexed { index, trackItem ->
-                                    val isSelectedTrack = hasAudioOverride && trackItem.isSelected
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (isSelectedTrack) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = ElectricViolet)
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                }
-                                                Text(trackItem.label, fontWeight = if (isSelectedTrack) FontWeight.Bold else FontWeight.Normal)
-                                            }
-                                        },
-                                        onClick = {
-                                            try {
-                                                player?.let { p ->
-                                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                                                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                                                        .setOverrideForType(TrackSelectionOverride(trackItem.group.mediaTrackGroup, trackItem.trackIndex))
-                                                        .build()
-                                                }
-                                            } catch (_: Exception) {
-                                                // Defensive fallback to prevent breaking stream
-                                                player?.let { p ->
-                                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                                                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
-                                                        .build()
-                                                }
-                                            }
-                                            showAudioMenu = false
-                                        },
-                                        modifier = Modifier.testTag("audio_track_item_$index")
-                                    )
-                                }
-                            }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Video Settings (Quality / Resolution & Aspect Ratio)
+                        IconButton(
+                            onClick = { showVideoDialog = true },
+                            modifier = Modifier.testTag("player_video_settings_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Video Quality & Aspect Ratio",
+                                tint = if (hasVideoOverride || currentScaleMode != VideoScaleMode.FIT) ElectricViolet else Color.White
+                            )
                         }
 
-                        // Subtitle Track Selector
-                        Box {
-                            IconButton(onClick = { showSubtitleMenu = true }) {
-                                Icon(
-                                    imageVector = if (availableSubtitleTracks.any { it.isSelected }) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
-                                    contentDescription = "Subtitle Tracks",
-                                    tint = if (availableSubtitleTracks.any { it.isSelected }) NeonCyan else Color.White
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showSubtitleMenu,
-                                onDismissRequest = { showSubtitleMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Subtitles Off") },
-                                    onClick = {
-                                        player?.trackSelectionParameters = player?.trackSelectionParameters?.buildUpon()
-                                            ?.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                            ?.build() ?: return@DropdownMenuItem
-                                        showSubtitleMenu = false
-                                    }
-                                )
-                                availableSubtitleTracks.forEach { subItem ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (subItem.isSelected) {
-                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = NeonCyan)
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                }
-                                                Text(subItem.label, fontWeight = if (subItem.isSelected) FontWeight.Bold else FontWeight.Normal)
-                                            }
-                                        },
-                                        onClick = {
-                                            player?.let { p ->
-                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                                    .setOverrideForType(TrackSelectionOverride(subItem.group.mediaTrackGroup, subItem.trackIndex))
-                                                    .build()
-                                            }
-                                            showSubtitleMenu = false
-                                        }
-                                    )
-                                }
-                            }
+                        // Audio Settings (Track Selector, Software Boost, Audio Delay)
+                        IconButton(
+                            onClick = { showAudioDialog = true },
+                            modifier = Modifier.testTag("player_audio_settings_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Audiotrack,
+                                contentDescription = "Audio Tracks & Settings",
+                                tint = if (hasAudioOverride || volumeBoostPercent > 0 || audioDelayMs != 0L) ElectricViolet else Color.White
+                            )
+                        }
+
+                        // Subtitle Settings (Track Selector, Text Size, Subtitle Delay)
+                        IconButton(
+                            onClick = { showSubtitleDialog = true },
+                            modifier = Modifier.testTag("player_subtitle_settings_btn")
+                        ) {
+                            Icon(
+                                imageVector = if (!hasSubtitleDisabled && availableSubtitleTracks.any { it.isSelected }) Icons.Default.ClosedCaption else Icons.Default.ClosedCaptionDisabled,
+                                contentDescription = "Subtitle Settings",
+                                tint = if (!hasSubtitleDisabled && availableSubtitleTracks.any { it.isSelected }) NeonCyan else Color.White
+                            )
                         }
 
                         // Lock Controls
@@ -1025,6 +1101,7 @@ fun VideoPlayerScreen(
                         IconButton(
                             onClick = {
                                 val newPos = (currentPositionMs - (skipIntervalSec * 1000L)).coerceAtLeast(0L)
+                                currentPositionMs = newPos
                                 player?.seekTo(newPos)
                             },
                             modifier = Modifier.size(52.dp)
@@ -1065,7 +1142,9 @@ fun VideoPlayerScreen(
                         // Fast-Forward button
                         IconButton(
                             onClick = {
-                                val newPos = (currentPositionMs + (skipIntervalSec * 1000L)).coerceAtMost(durationMs)
+                                val maxPos = if (durationMs > 0) durationMs else (player?.duration?.takeIf { it > 0 } ?: Long.MAX_VALUE)
+                                val newPos = (currentPositionMs + (skipIntervalSec * 1000L)).coerceAtMost(maxPos)
+                                currentPositionMs = newPos
                                 player?.seekTo(newPos)
                             },
                             modifier = Modifier.size(52.dp)
@@ -1087,16 +1166,27 @@ fun VideoPlayerScreen(
                             .fillMaxWidth()
                             .align(Alignment.BottomCenter)
                             .padding(horizontal = 20.dp, vertical = 24.dp)
+                            .pointerInput(Unit) {
+                                detectTapGestures { }
+                            }
                     ) {
+                        val maxDuration = maxOf(1f, durationMs.toFloat())
+                        val displayPos = if (isDraggingSlider) sliderPositionMs else currentPositionMs.toFloat()
+
                         Slider(
-                            value = currentPositionMs.toFloat().coerceAtMost(durationMs.toFloat()),
+                            value = displayPos.coerceIn(0f, maxDuration),
                             onValueChange = { newPos ->
-                                currentPositionMs = newPos.toLong()
+                                isDraggingSlider = true
+                                sliderPositionMs = newPos
                             },
                             onValueChangeFinished = {
-                                player?.seekTo(currentPositionMs)
+                                val targetPos = sliderPositionMs.toLong().coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                currentPositionMs = targetPos
+                                player?.seekTo(targetPos)
+                                isDraggingSlider = false
                             },
-                            valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
+                            valueRange = 0f..maxDuration,
+                            enabled = durationMs > 0,
                             colors = SliderDefaults.colors(
                                 thumbColor = ElectricViolet,
                                 activeTrackColor = ElectricViolet,
@@ -1112,7 +1202,7 @@ fun VideoPlayerScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = formatDuration(currentPositionMs),
+                                text = formatDuration(if (isDraggingSlider) sliderPositionMs.toLong() else currentPositionMs),
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodySmall
                             )
@@ -1158,6 +1248,477 @@ fun VideoPlayerScreen(
                     }
                 ) {
                     Text("Start Over")
+                }
+            }
+        )
+    }
+
+    // Video & Display Settings Dialog
+    if (showVideoDialog) {
+        AlertDialog(
+            onDismissRequest = { showVideoDialog = false },
+            containerColor = Color(0xFA1E1F24),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Tune, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Video & Display", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Section 1: Quality / Resolution
+                    Text("RESOLUTION & QUALITY", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        color = if (!hasVideoOverride) ElectricViolet.copy(alpha = 0.2f) else Color(0x22FFFFFF),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                try {
+                                    player?.let { p ->
+                                        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                                            .build()
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (!hasVideoOverride) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            Column {
+                                Text("Auto (Adaptive)", color = Color.White, fontWeight = if (!hasVideoOverride) FontWeight.Bold else FontWeight.Normal, fontSize = 14.sp)
+                                Text("Dynamically adjusts quality for bandwidth", color = Color.Gray, fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    if (availableVideoTracks.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp)) {
+                            items(availableVideoTracks) { trackItem ->
+                                val isSelected = hasVideoOverride && trackItem.isSelected
+                                Surface(
+                                    color = if (isSelected) ElectricViolet.copy(alpha = 0.2f) else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            try {
+                                                player?.let { p ->
+                                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                        .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                                                        .setOverrideForType(TrackSelectionOverride(trackItem.group.mediaTrackGroup, trackItem.trackIndex))
+                                                        .build()
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                        }
+                                        Text(trackItem.label, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (video != null && video!!.width > 0) "Current video stream: ${video!!.width}x${video!!.height} (${video!!.format.uppercase()})" else "Single Progressive Stream",
+                            color = Color.LightGray,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = Color(0x33FFFFFF))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Section 2: Aspect Ratio Mode
+                    Text("ASPECT RATIO / DISPLAY MODE", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        VideoScaleMode.values().forEach { mode ->
+                            val isSelected = currentScaleMode == mode
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) ElectricViolet else Color(0x22FFFFFF),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        currentScaleMode = mode
+                                    }
+                            ) {
+                                Text(
+                                    text = mode.label,
+                                    color = if (isSelected) Color.White else Color.LightGray,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showVideoDialog = false }) {
+                    Text("Done", color = ElectricViolet, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    // Audio Settings Dialog
+    if (showAudioDialog) {
+        AlertDialog(
+            onDismissRequest = { showAudioDialog = false },
+            containerColor = Color(0xFA1E1F24),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Audiotrack, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Audio Settings", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Section 1: Audio Tracks
+                    Text("AUDIO TRACKS (${availableAudioTracks.size})", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp)) {
+                        item {
+                            Surface(
+                                color = if (!hasAudioOverride) ElectricViolet.copy(alpha = 0.2f) else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            player?.let { p ->
+                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                                    .build()
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (!hasAudioOverride) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text("Auto (Default Track)", color = Color.White, fontWeight = if (!hasAudioOverride) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                                }
+                            }
+                        }
+
+                        items(availableAudioTracks) { trackItem ->
+                            val isSelected = hasAudioOverride && trackItem.isSelected
+                            Surface(
+                                color = if (isSelected) ElectricViolet.copy(alpha = 0.2f) else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            player?.let { p ->
+                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                                    .setOverrideForType(TrackSelectionOverride(trackItem.group.mediaTrackGroup, trackItem.trackIndex))
+                                                    .build()
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = ElectricViolet, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(trackItem.label, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0x33FFFFFF))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Section 2: Volume Boost (Software Amplifier)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("VOLUME BOOST", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(if (volumeBoostPercent == 0) "Normal (100%)" else "+$volumeBoostPercent%", color = Color.LightGray, fontSize = 12.sp)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(0, 25, 50, 75, 100).forEach { boost ->
+                            val isSelected = volumeBoostPercent == boost
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) ElectricViolet else Color(0x22FFFFFF),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        volumeBoostPercent = boost
+                                    }
+                            ) {
+                                Text(
+                                    text = if (boost == 0) "Off" else "+$boost%",
+                                    color = if (isSelected) Color.White else Color.LightGray,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0x33FFFFFF))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Section 3: Audio Sync (Offset)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("AUDIO SYNC", color = ElectricViolet, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        if (audioDelayMs != 0L) {
+                            TextButton(onClick = { audioDelayMs = 0L }, modifier = Modifier.height(28.dp)) {
+                                Text("Reset", color = ElectricViolet, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { audioDelayMs = (audioDelayMs - 50L).coerceAtLeast(-2000L) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease audio delay", tint = Color.White)
+                        }
+                        Text(
+                            text = if (audioDelayMs == 0L) "0 ms" else if (audioDelayMs > 0) "+$audioDelayMs ms" else "$audioDelayMs ms",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        IconButton(
+                            onClick = { audioDelayMs = (audioDelayMs + 50L).coerceAtMost(2000L) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Increase audio delay", tint = Color.White)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAudioDialog = false }) {
+                    Text("Done", color = ElectricViolet, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    // Subtitle Settings Dialog
+    if (showSubtitleDialog) {
+        AlertDialog(
+            onDismissRequest = { showSubtitleDialog = false },
+            containerColor = Color(0xFA1E1F24),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.ClosedCaption, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text("Subtitle Settings", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Section 1: Subtitle Tracks
+                    Text("SUBTITLE TRACKS", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp)) {
+                        item {
+                            Surface(
+                                color = if (hasSubtitleDisabled) NeonCyan.copy(alpha = 0.2f) else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            player?.let { p ->
+                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                                    .build()
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (hasSubtitleDisabled) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text("Subtitles Off", color = Color.White, fontWeight = if (hasSubtitleDisabled) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                                }
+                            }
+                        }
+
+                        items(availableSubtitleTracks) { subItem ->
+                            val isSelected = !hasSubtitleDisabled && subItem.isSelected
+                            Surface(
+                                color = if (isSelected) NeonCyan.copy(alpha = 0.2f) else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        try {
+                                            player?.let { p ->
+                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                                    .setOverrideForType(TrackSelectionOverride(subItem.group.mediaTrackGroup, subItem.trackIndex))
+                                                    .build()
+                                            }
+                                        } catch (_: Exception) {}
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(subItem.label, color = Color.White, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0x33FFFFFF))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Section 2: Subtitle Text Size
+                    Text("TEXT SIZE", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        SubtitleSize.values().forEach { sizeOption ->
+                            val isSelected = subtitleSize == sizeOption
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) NeonCyan else Color(0x22FFFFFF),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        subtitleSize = sizeOption
+                                    }
+                            ) {
+                                Text(
+                                    text = sizeOption.label,
+                                    color = if (isSelected) Color.Black else Color.LightGray,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = Color(0x33FFFFFF))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Section 3: Subtitle Timing Sync (Delay Offset)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("SUBTITLE TIMING SYNC", color = NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        if (subtitleDelayMs != 0L) {
+                            TextButton(onClick = { subtitleDelayMs = 0L }, modifier = Modifier.height(28.dp)) {
+                                Text("Reset", color = NeonCyan, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { subtitleDelayMs = (subtitleDelayMs - 50L).coerceAtLeast(-5000L) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Remove, contentDescription = "Decrease subtitle delay", tint = Color.White)
+                        }
+                        Text(
+                            text = if (subtitleDelayMs == 0L) "0 ms" else if (subtitleDelayMs > 0) "+$subtitleDelayMs ms" else "$subtitleDelayMs ms",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        IconButton(
+                            onClick = { subtitleDelayMs = (subtitleDelayMs + 50L).coerceAtMost(5000L) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Increase subtitle delay", tint = Color.White)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSubtitleDialog = false }) {
+                    Text("Done", color = NeonCyan, fontWeight = FontWeight.Bold)
                 }
             }
         )

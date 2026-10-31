@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for fixing multiple audio track selection in the video player, resolving cover artwork fetching and association from directories, and introducing an in-built web browser next to the home search bar with video stream sniffing and one-tap import into the library.",
-  "updatedAt":  "2026-10-31T18:12:46.312995400Z",
+  "summary":  "Implementation plan for comprehensive Audio, Video, and Subtitle controls in Video Library player. Includes resolution quality selector, aspect ratio modes, audio track picker with sync delay and volume boost, and subtitle track selector with sync delay and size styling, fully integrated without altering other app features.",
+  "updatedAt":  "2026-10-31T20:25:19.746344786Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

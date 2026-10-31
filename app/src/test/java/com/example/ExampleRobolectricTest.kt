@@ -60,10 +60,32 @@ class ExampleRobolectricTest {
             .setSampleRate(48000)
             .setLanguage("eng")
             .build()
-
         val label = com.example.ui.player.formatAudioTrackLabel(format, 0)
         assertTrue(label.contains("E-AC-3"))
         assertTrue(label.contains("5.1 Surround"))
         assertTrue(label.contains("48 kHz"))
+    }
+
+    @Test
+    fun `video track formatting displays resolution bitrate and frame rate`() {
+        val format = androidx.media3.common.Format.Builder()
+            .setWidth(1920)
+            .setHeight(1080)
+            .setAverageBitrate(5_500_000)
+            .setFrameRate(60f)
+            .build()
+
+        val label = com.example.ui.player.formatVideoTrackLabel(format, 0)
+        assertTrue(label.contains("1080p FHD"))
+        assertTrue(label.contains("1920x1080"))
+        assertTrue(label.contains("5.5 Mbps"))
+        assertTrue(label.contains("60fps"))
+    }
+
+    @Test
+    fun `video scale modes and subtitle size enums have valid configurations`() {
+        assertEquals(3, com.example.ui.player.VideoScaleMode.values().size)
+        assertEquals(4, com.example.ui.player.SubtitleSize.values().size)
+        assertTrue(com.example.ui.player.SubtitleSize.LARGE.sizeSp > com.example.ui.player.SubtitleSize.SMALL.sizeSp)
     }
 }

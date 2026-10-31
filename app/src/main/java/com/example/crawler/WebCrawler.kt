@@ -46,7 +46,7 @@ class WebCrawler(
     private val visitedUrls = mutableSetOf<String>()
     private val discoveredItems = mutableListOf<DiscoveredMedia>()
 
-    private val videoExtensions = setOf("mp4", "webm", "mkv", "mov", "m4v", "avi", "ts", "m3u8")
+    private val videoExtensions = com.example.model.MediaFormats.VIDEO_EXTENSIONS
     private val imageExtensions = setOf("jpg", "jpeg", "png", "webp")
     private val subtitleExtensions = setOf("srt", "vtt", "ass", "ssa")
 

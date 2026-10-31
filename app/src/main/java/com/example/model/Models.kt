@@ -46,7 +46,7 @@ data class CrawlerConfig(
     val requestDelayMs: Long = 250L,
     val sameDomainOnly: Boolean = true,
     val sameRootOnly: Boolean = true,
-    val allowedExtensions: Set<String> = setOf("mp4", "webm", "mkv", "mov", "m4v", "avi", "ts", "m3u8")
+    val allowedExtensions: Set<String> = MediaFormats.VIDEO_EXTENSIONS
 )
 
 data class DiscoveredMedia(

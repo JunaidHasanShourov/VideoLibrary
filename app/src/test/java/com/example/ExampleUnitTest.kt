@@ -78,4 +78,29 @@ class ExampleUnitTest {
     assertEquals(1, associated.size)
     assertEquals("https://example.com/og_thumb.jpg", associated[0].artworkUrl)
   }
+
+  @Test
+  fun mediaFormats_recognizesVideoAndAudioExtensions() {
+    assertTrue(com.example.model.MediaFormats.isVideo("mkv"))
+    assertTrue(com.example.model.MediaFormats.isVideo("avi"))
+    assertTrue(com.example.model.MediaFormats.isVideo("flv"))
+    assertTrue(com.example.model.MediaFormats.isVideo("ts"))
+    assertTrue(com.example.model.MediaFormats.isVideo("m2ts"))
+    assertTrue(com.example.model.MediaFormats.isVideo("vob"))
+    assertTrue(com.example.model.MediaFormats.isVideo("wmv"))
+    assertTrue(com.example.model.MediaFormats.isVideo("3gp"))
+    assertTrue(com.example.model.MediaFormats.isVideo("webm"))
+    assertTrue(com.example.model.MediaFormats.isVideo("mp4"))
+    assertTrue(com.example.model.MediaFormats.isVideo("m3u8"))
+    assertTrue(com.example.model.MediaFormats.isVideo("mpd"))
+
+    assertTrue(com.example.model.MediaFormats.isAudio("flac"))
+    assertTrue(com.example.model.MediaFormats.isAudio("opus"))
+    assertTrue(com.example.model.MediaFormats.isAudio("ac3"))
+    assertTrue(com.example.model.MediaFormats.isAudio("eac3"))
+    assertTrue(com.example.model.MediaFormats.isAudio("dts"))
+    assertTrue(com.example.model.MediaFormats.isAudio("alac"))
+    assertTrue(com.example.model.MediaFormats.isAudio("wav"))
+    assertTrue(com.example.model.MediaFormats.isAudio("aac"))
+  }
 }

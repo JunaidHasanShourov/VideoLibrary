@@ -100,7 +100,20 @@ import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.amr.AmrExtractor
+import androidx.media3.extractor.flac.FlacExtractor
+import androidx.media3.extractor.mkv.MatroskaExtractor
+import androidx.media3.extractor.mp4.FragmentedMp4Extractor
+import androidx.media3.extractor.mp4.Mp4Extractor
+import androidx.media3.extractor.ts.AdtsExtractor
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
 import com.example.VideoLibraryApp
 import com.example.ui.components.formatDuration
@@ -124,6 +137,59 @@ data class SubtitleTrackItem(
     val label: String,
     val isSelected: Boolean
 )
+
+fun formatAudioTrackLabel(format: androidx.media3.common.Format, index: Int): String {
+    val lang = format.language?.uppercase()?.takeIf { it.isNotBlank() }
+    val explicitLabel = format.label?.takeIf { it.isNotBlank() }
+
+    val codec = when {
+        format.sampleMimeType?.contains("eac3-joc", ignoreCase = true) == true -> "Dolby Atmos"
+        format.sampleMimeType?.contains("eac3", ignoreCase = true) == true -> "E-AC-3"
+        format.sampleMimeType?.contains("ac3", ignoreCase = true) == true -> "AC-3"
+        format.sampleMimeType?.contains("ac4", ignoreCase = true) == true -> "AC-4"
+        format.sampleMimeType?.contains("dts.hd", ignoreCase = true) == true -> "DTS-HD"
+        format.sampleMimeType?.contains("dts", ignoreCase = true) == true -> "DTS"
+        format.sampleMimeType?.contains("true-hd", ignoreCase = true) == true -> "TrueHD"
+        format.sampleMimeType?.contains("flac", ignoreCase = true) == true -> "FLAC"
+        format.sampleMimeType?.contains("opus", ignoreCase = true) == true -> "Opus"
+        format.sampleMimeType?.contains("vorbis", ignoreCase = true) == true -> "Vorbis"
+        format.sampleMimeType?.contains("mp4a", ignoreCase = true) == true -> "AAC"
+        format.sampleMimeType?.contains("mpeg", ignoreCase = true) == true -> "MP3"
+        format.sampleMimeType?.contains("alac", ignoreCase = true) == true -> "ALAC"
+        format.sampleMimeType?.contains("pcm", ignoreCase = true) == true || format.sampleMimeType?.contains("raw", ignoreCase = true) == true -> "PCM"
+        format.sampleMimeType?.contains("amr", ignoreCase = true) == true -> "AMR"
+        format.sampleMimeType?.contains("wma", ignoreCase = true) == true -> "WMA"
+        !format.codecs.isNullOrBlank() -> format.codecs
+        !format.sampleMimeType.isNullOrBlank() -> format.sampleMimeType!!.substringAfterLast('/')
+        else -> null
+    }
+
+    val channels = when (format.channelCount) {
+        1 -> "Mono"
+        2 -> "Stereo"
+        6 -> "5.1 Surround"
+        8 -> "7.1 Surround"
+        in 3..5 -> "${format.channelCount}ch"
+        in 9..16 -> "${format.channelCount}ch"
+        else -> null
+    }
+
+    val sampleRate = if (format.sampleRate > 0) {
+        val khz = format.sampleRate / 1000f
+        if (khz == khz.toInt().toFloat()) "${khz.toInt()} kHz" else String.format(java.util.Locale.US, "%.1f kHz", khz)
+    } else null
+
+    val details = listOfNotNull(codec, channels, sampleRate).joinToString(" • ")
+
+    return when {
+        explicitLabel != null && details.isNotBlank() -> "$explicitLabel ($details)"
+        explicitLabel != null -> explicitLabel
+        lang != null && details.isNotBlank() -> "$lang • $details"
+        lang != null -> "Audio ($lang)"
+        details.isNotBlank() -> "Track ${index + 1} ($details)"
+        else -> "Audio Track ${index + 1}"
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -218,11 +284,62 @@ fun VideoPlayerScreen(
                 )
             )
 
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+            .setMp4ExtractorFlags(
+                Mp4Extractor.FLAG_WORKAROUND_IGNORE_EDIT_LISTS or
+                Mp4Extractor.FLAG_READ_SEF_DATA
+            )
+            .setFragmentedMp4ExtractorFlags(
+                FragmentedMp4Extractor.FLAG_WORKAROUND_EVERY_VIDEO_FRAME_IS_SYNC_FRAME or
+                FragmentedMp4Extractor.FLAG_WORKAROUND_IGNORE_TFDT_BOX
+            )
+            .setMatroskaExtractorFlags(
+                MatroskaExtractor.FLAG_DISABLE_SEEK_FOR_CUES
+            )
+            .setTsExtractorFlags(
+                DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES or
+                DefaultTsPayloadReaderFactory.FLAG_DETECT_ACCESS_UNITS
+            )
+            .setAdtsExtractorFlags(AdtsExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+            .setAmrExtractorFlags(AmrExtractor.FLAG_ENABLE_CONSTANT_BITRATE_SEEKING)
+            .setFlacExtractorFlags(FlacExtractor.FLAG_DISABLE_ID3_METADATA)
 
-        val exo = ExoPlayer.Builder(context)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink? {
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(true)
+                    .setEnableAudioTrackPlaybackParams(true)
+                    .setAudioCapabilities(AudioCapabilities.getCapabilities(context))
+                    .build()
+            }
+        }.apply {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            setEnableDecoderFallback(true)
+            setAllowedVideoJoiningTimeMs(5000)
+        }
+
+        val trackSelector = DefaultTrackSelector(context).apply {
+            setParameters(
+                buildUponParameters()
+                    .setAllowAudioMixedMimeTypeAdaptiveness(true)
+                    .setAllowAudioMixedSampleRateAdaptiveness(true)
+                    .setAllowAudioMixedChannelCountAdaptiveness(true)
+                    .setAllowMultipleAdaptiveSelections(true)
+                    .setExceedRendererCapabilitiesIfNecessary(true)
+            )
+        }
+
+        val exo = ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setTrackSelector(trackSelector)
             .setAudioAttributes(audioAttributes, true)
             .build().apply {
                 volume = 1.0f
@@ -268,6 +385,25 @@ fun VideoPlayerScreen(
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
+                        val hasAudioOverride = trackSelectionParameters.overrides.values.any {
+                            it.type == C.TRACK_TYPE_AUDIO
+                        }
+                        val isAudioOrDecoderError = error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED ||
+                                error.errorCode == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+
+                        // Auto-recover if manual audio track selection caused a decoder/track init failure
+                        if (hasAudioOverride && isAudioOrDecoderError) {
+                            trackSelectionParameters = trackSelectionParameters.buildUpon()
+                                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                .build()
+                            prepare()
+                            play()
+                            return
+                        }
+
                         isBuffering = false
                         isPlaying = false
                         val cause = error.cause
@@ -282,6 +418,8 @@ fun VideoPlayerScreen(
                                 "Network connection failed. Please check internet access."
                             error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED ->
                                 "Unsupported stream or codec format."
+                            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
+                                "Audio/Video decoder failed to initialize for this format."
                             else ->
                                 error.message ?: "Failed to play video. Stream source may be unavailable."
                         }
@@ -362,9 +500,7 @@ fun VideoPlayerScreen(
             if (group.type == C.TRACK_TYPE_AUDIO) {
                 for (i in 0 until group.length) {
                     val format = group.getTrackFormat(i)
-                    val lang = format.language?.uppercase() ?: ""
-                    val label = format.label?.takeIf { it.isNotBlank() }
-                        ?: if (lang.isNotBlank()) "Audio ($lang)" else "Audio Track ${list.size + 1}"
+                    val label = formatAudioTrackLabel(format, list.size)
                     list.add(AudioTrackItem(group, i, label, group.isTrackSelected(i)))
                 }
             }

@@ -188,7 +188,7 @@ fun BrowserScreen(
         )
     }
 
-    val videoExtensions = remember { setOf("mp4", "m3u8", "webm", "mkv", "mov", "ts", "m4v") }
+    val videoExtensions = remember { com.example.model.MediaFormats.VIDEO_EXTENSIONS }
 
     fun addDetectedVideo(url: String, titleHint: String? = null, artwork: String? = null) {
         val cleanUrl = url.trim()
@@ -526,9 +526,10 @@ fun BrowserScreen(
                                             }
                                         }
                                         var links = document.querySelectorAll('a[href]');
+                                        var vidRegex = /\.(mp4|m4v|mkv|webm|mov|avi|flv|ts|mts|m2ts|vob|wmv|asf|3gp|3g2|ogv|mpg|mpeg|m3u8|mpd)($|\?|#)/i;
                                         for (var j = 0; j < links.length; j++) {
                                             var href = links[j].href;
-                                            if (href && (href.endsWith('.mp4') || href.endsWith('.m3u8') || href.endsWith('.webm') || href.endsWith('.mkv'))) {
+                                            if (href && vidRegex.test(href)) {
                                                 var img = links[j].querySelector('img');
                                                 var thumb = img ? img.src : '';
                                                 results.push(href + '|||' + thumb);
@@ -557,7 +558,7 @@ fun BrowserScreen(
                                 super.onLoadResource(view, url)
                                 url?.let { resUrl ->
                                     val ext = resUrl.substringAfterLast('/').substringBefore('?').substringAfterLast('.', "").lowercase()
-                                    if (videoExtensions.contains(ext) || resUrl.contains(".m3u8", ignoreCase = true) || resUrl.contains(".mp4?", ignoreCase = true)) {
+                                    if (videoExtensions.contains(ext) || com.example.model.MediaFormats.isStreamingManifest(resUrl) || resUrl.contains(".mp4?", ignoreCase = true)) {
                                         addDetectedVideo(resUrl)
                                     }
                                 }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.crawler.FilenameCleaner
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -49,5 +50,20 @@ class ExampleRobolectricTest {
         assertEquals("English", com.example.crawler.MetadataAssociator.extractSubtitleLanguage("movie.en.srt"))
         assertEquals("Bengali", com.example.crawler.MetadataAssociator.extractSubtitleLanguage("movie.bn.srt"))
         assertEquals("Hindi", com.example.crawler.MetadataAssociator.extractSubtitleLanguage("movie.hi.srt"))
+    }
+
+    @Test
+    fun `audio track formatting displays codec channels and rate`() {
+        val format = androidx.media3.common.Format.Builder()
+            .setSampleMimeType("audio/eac3")
+            .setChannelCount(6)
+            .setSampleRate(48000)
+            .setLanguage("eng")
+            .build()
+
+        val label = com.example.ui.player.formatAudioTrackLabel(format, 0)
+        assertTrue(label.contains("E-AC-3"))
+        assertTrue(label.contains("5.1 Surround"))
+        assertTrue(label.contains("48 kHz"))
     }
 }

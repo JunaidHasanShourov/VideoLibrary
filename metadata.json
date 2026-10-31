@@ -1,0 +1,6 @@
+{
+  "name": "Video Library",
+  "description": "Personal video library, media discovery, website/directory crawler, downloader and advanced video player.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -75,6 +75,7 @@ fun MainApp(
                     onNavigateToPlayer = { id -> navController.navigate(NavRoute.videoPlayer(id)) },
                     onNavigateToDetails = { id -> navController.navigate(NavRoute.videoDetails(id)) },
                     onNavigateToSearch = { navController.navigate(NavRoute.SEARCH) },
+                    onNavigateToBrowser = { navController.navigate(NavRoute.BROWSER) },
                     onNavigateToAddVideo = { navController.navigate(NavRoute.ADD_VIDEO) },
                     onNavigateToWebImporter = { navController.navigate(NavRoute.WEBSITE_IMPORTER) },
                     onNavigateToFtpImporter = { navController.navigate(NavRoute.FTP_IMPORTER) },
@@ -201,6 +202,14 @@ fun MainApp(
                             popUpTo(NavRoute.Home.route)
                         }
                     }
+                )
+            }
+
+            // In-Built Video Browser
+            composable(NavRoute.BROWSER) {
+                com.example.ui.browser.BrowserScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToPlayer = { id -> navController.navigate(NavRoute.videoPlayer(id)) }
                 )
             }
         }

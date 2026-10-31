@@ -65,11 +65,15 @@ class WebCrawler(
         _progress.value = _progress.value.copy(isRunning = false, statusMessage = "Crawling cancelled")
     }
 
+    @Volatile
+    private var detectedRootArtwork: String? = null
+
     suspend fun crawl(rootUrl: String): List<DiscoveredMedia> = withContext(Dispatchers.IO) {
         isCancelled = false
         isPaused = false
         visitedUrls.clear()
         discoveredItems.clear()
+        detectedRootArtwork = null
 
         _progress.value = CrawlerProgress(
             currentUrl = rootUrl,
@@ -132,7 +136,7 @@ class WebCrawler(
         }
 
         // Post-processing: Associate nearby posters, thumbnails and subtitles
-        val associated = MetadataAssociator.associate(discoveredItems)
+        val associated = MetadataAssociator.associate(discoveredItems, pageArtworkUrl = detectedRootArtwork)
 
         _progress.value = _progress.value.copy(
             isRunning = false,
@@ -181,7 +185,28 @@ class WebCrawler(
         val pageTitle = doc.select("meta[property=og:title]").attr("content").ifBlank {
             doc.title().ifBlank { urlStr.substringAfterLast('/') }
         }
-        val pageImage = doc.select("meta[property=og:image]").attr("content").ifBlank { null }
+        val pageImage = doc.select("meta[property=og:image], meta[name=twitter:image], link[rel=image_src]")
+            .attr("content")
+            .ifBlank { doc.select("link[rel=image_src]").attr("href") }
+            .ifBlank { null }
+
+        if (pageImage != null) {
+            if (detectedRootArtwork == null) detectedRootArtwork = pageImage
+            addDiscoveredItem(pageImage, MediaType.ARTWORK, getExtension(pageImage))
+        }
+
+        // Collect inline images from webpage
+        val imgElements = doc.select("img[src]")
+        for (img in imgElements) {
+            val src = img.absUrl("src")
+            if (src.isNotBlank() && !src.startsWith("data:")) {
+                val ext = getExtension(src)
+                if (imageExtensions.contains(ext)) {
+                    addDiscoveredItem(src, MediaType.ARTWORK, ext)
+                }
+            }
+        }
+
         val pageDesc = doc.select("meta[property=og:description]").attr("content").ifBlank {
             doc.select("meta[name=description]").attr("content")
         }
@@ -216,7 +241,8 @@ class WebCrawler(
                 else {
                     try {
                         val abs = a.absUrl("href")
-                        if (abs.isNotBlank()) ParsedLink(abs, a.text(), abs.endsWith("/")) else null
+                        val thumb = a.select("img[src]").firstOrNull()?.absUrl("src")?.takeIf { it.isNotBlank() }
+                        if (abs.isNotBlank()) ParsedLink(abs, a.text(), abs.endsWith("/"), thumb) else null
                     } catch (_: Exception) { null }
                 }
             }
@@ -227,7 +253,7 @@ class WebCrawler(
             val ext = getExtension(targetUrl)
 
             if (videoExtensions.contains(ext)) {
-                addDiscoveredItem(targetUrl, MediaType.VIDEO, ext, defaultTitle = link.name)
+                addDiscoveredItem(targetUrl, MediaType.VIDEO, ext, defaultTitle = link.name, artworkUrl = link.thumbnail ?: pageImage)
             } else if (imageExtensions.contains(ext)) {
                 addDiscoveredItem(targetUrl, MediaType.ARTWORK, ext)
             } else if (subtitleExtensions.contains(ext)) {

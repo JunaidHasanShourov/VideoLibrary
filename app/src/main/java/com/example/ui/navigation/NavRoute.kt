@@ -35,6 +35,7 @@ sealed class NavRoute(
         const val IMPORT_RESULTS = "import_results"
         const val CATEGORIES = "categories"
         const val CATEGORY_DETAIL = "category/{categoryName}"
+        const val BROWSER = "browser"
 
         fun videoDetails(videoId: Long) = "video_details/$videoId"
         fun videoPlayer(videoId: Long) = "player/$videoId"

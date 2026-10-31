@@ -79,6 +79,7 @@ fun HomeScreen(
     onNavigateToPlayer: (Long) -> Unit,
     onNavigateToDetails: (Long) -> Unit,
     onNavigateToSearch: () -> Unit,
+    onNavigateToBrowser: () -> Unit,
     onNavigateToAddVideo: () -> Unit,
     onNavigateToWebImporter: () -> Unit,
     onNavigateToFtpImporter: () -> Unit,
@@ -125,6 +126,16 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onNavigateToBrowser,
+                        modifier = Modifier.testTag("home_browser_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = "In-built Browser",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(
                         onClick = onNavigateToSearch,
                         modifier = Modifier.testTag("home_search_btn")
@@ -304,7 +315,17 @@ fun HomeScreen(
                     text = "Add Media to Library",
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                ImportOptionItem(
+                    icon = Icons.Default.Language,
+                    title = "In-Built Video Browser",
+                    description = "Browse websites, search online, and import discovered video streams",
+                    onClick = {
+                        showAddMenuSheet = false
+                        onNavigateToBrowser()
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 ImportOptionItem(
                     icon = Icons.Default.Link,

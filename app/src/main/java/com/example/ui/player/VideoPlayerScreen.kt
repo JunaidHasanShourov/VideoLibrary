@@ -703,40 +703,79 @@ fun VideoPlayerScreen(
                     Row {
                         // Audio Track Selector
                         Box {
-                            IconButton(onClick = { showAudioMenu = true }) {
+                            val hasAudioOverride = remember(player?.trackSelectionParameters) {
+                                player?.trackSelectionParameters?.overrides?.values?.any { it.type == C.TRACK_TYPE_AUDIO } == true
+                            }
+
+                            IconButton(
+                                onClick = { showAudioMenu = true },
+                                modifier = Modifier.testTag("player_audio_tracks_btn")
+                            ) {
                                 Icon(Icons.Default.Audiotrack, contentDescription = "Audio Tracks", tint = Color.White)
                             }
                             DropdownMenu(
                                 expanded = showAudioMenu,
                                 onDismissRequest = { showAudioMenu = false }
                             ) {
-                                if (availableAudioTracks.isEmpty()) {
+                                // Always show Auto option to allow resetting back to automatic selection
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (!hasAudioOverride) {
+                                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = ElectricViolet)
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                            }
+                                            Text("Auto (Default)", fontWeight = if (!hasAudioOverride) FontWeight.Bold else FontWeight.Normal)
+                                        }
+                                    },
+                                    onClick = {
+                                        try {
+                                            player?.let { p ->
+                                                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                    .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                                    .build()
+                                            }
+                                        } catch (_: Exception) {}
+                                        showAudioMenu = false
+                                    },
+                                    modifier = Modifier.testTag("audio_track_auto")
+                                )
+
+                                availableAudioTracks.forEachIndexed { index, trackItem ->
+                                    val isSelectedTrack = hasAudioOverride && trackItem.isSelected
                                     DropdownMenuItem(
-                                        text = { Text("Default Audio") },
-                                        onClick = { showAudioMenu = false }
-                                    )
-                                } else {
-                                    availableAudioTracks.forEach { trackItem ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    if (trackItem.isSelected) {
-                                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = ElectricViolet)
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                    }
-                                                    Text(trackItem.label, fontWeight = if (trackItem.isSelected) FontWeight.Bold else FontWeight.Normal)
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (isSelectedTrack) {
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = ElectricViolet)
+                                                    Spacer(modifier = Modifier.width(6.dp))
                                                 }
-                                            },
-                                            onClick = {
+                                                Text(trackItem.label, fontWeight = if (isSelectedTrack) FontWeight.Bold else FontWeight.Normal)
+                                            }
+                                        },
+                                        onClick = {
+                                            try {
                                                 player?.let { p ->
                                                     p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
                                                         .setOverrideForType(TrackSelectionOverride(trackItem.group.mediaTrackGroup, trackItem.trackIndex))
                                                         .build()
                                                 }
-                                                showAudioMenu = false
+                                            } catch (_: Exception) {
+                                                // Defensive fallback to prevent breaking stream
+                                                player?.let { p ->
+                                                    p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
+                                                        .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                                                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                                        .build()
+                                                }
                                             }
-                                        )
-                                    }
+                                            showAudioMenu = false
+                                        },
+                                        modifier = Modifier.testTag("audio_track_item_$index")
+                                    )
                                 }
                             }
                         }

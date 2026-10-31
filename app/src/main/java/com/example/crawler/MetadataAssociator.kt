@@ -6,9 +6,12 @@ import java.net.URI
 
 object MetadataAssociator {
 
-    private val POSTER_NAMES = listOf("poster", "cover", "folder", "thumb", "thumbnail", "front", "backdrop")
+    private val POSTER_NAMES = listOf(
+        "poster", "cover", "folder", "thumb", "thumbnail", "front", "backdrop",
+        "fanart", "banner", "preview", "screenshot", "art", "image", "pic"
+    )
 
-    private val ARTWORK_DIR_NAMES = setOf("artwork", "artworks", "thumbnails", "covers", "images", "thumbs", "poster", "posters")
+    private val ARTWORK_DIR_NAMES = setOf("artwork", "artworks", "thumbnails", "covers", "images", "thumbs", "poster", "posters", "art")
     private val SUBTITLE_DIR_NAMES = setOf("subtitles", "subtitle", "subs", "sub")
 
     private val LANGUAGE_MAP = mapOf(
@@ -36,27 +39,27 @@ object MetadataAssociator {
         val subtitles = discoveredItems.filter { it.mediaType == MediaType.SUBTITLE }
 
         return videos.map { video ->
-            var matchedArtwork = video.artworkUrl ?: pageArtworkUrl
+            var matchedArtwork = video.artworkUrl?.takeIf { it.isNotBlank() } ?: pageArtworkUrl?.takeIf { it.isNotBlank() }
             var matchedSubtitle = video.subtitleUrl
 
-            val videoBaseName = video.originalFilename.substringBeforeLast('.').lowercase()
-            val videoParentDir = getParentDirectory(video.url)
-            val videoGrandParentDir = getParentDirectory(videoParentDir)
+            val videoBaseName = cleanName(video.originalFilename)
+            val videoParentDir = normalizeDirectory(video.url)
+            val videoGrandParentDir = if (videoParentDir.contains("/")) videoParentDir.substringBeforeLast('/') else ""
 
             // 1. Multi-location Artwork Detection
             if (matchedArtwork.isNullOrBlank()) {
-                // Same directory matching video name
+                // Same directory matching video name or video base name prefix
                 var candidateArtwork = artworks.firstOrNull { art ->
-                    val artBase = art.originalFilename.substringBeforeLast('.').lowercase()
-                    val artDir = getParentDirectory(art.url)
-                    artDir == videoParentDir && (artBase == videoBaseName || artBase.startsWith(videoBaseName))
+                    val artBase = cleanName(art.originalFilename)
+                    val artDir = normalizeDirectory(art.url)
+                    artDir == videoParentDir && (artBase == videoBaseName || artBase.startsWith(videoBaseName) || videoBaseName.startsWith(artBase))
                 }
 
                 // Same directory matching standard poster/cover name
                 if (candidateArtwork == null) {
                     candidateArtwork = artworks.firstOrNull { art ->
-                        val artBase = art.originalFilename.substringBeforeLast('.').lowercase()
-                        val artDir = getParentDirectory(art.url)
+                        val artBase = cleanName(art.originalFilename)
+                        val artDir = normalizeDirectory(art.url)
                         artDir == videoParentDir && POSTER_NAMES.any { artBase.contains(it) }
                     }
                 }
@@ -64,40 +67,56 @@ object MetadataAssociator {
                 // Subdirectory (e.g. artwork/, thumbnails/, covers/)
                 if (candidateArtwork == null) {
                     candidateArtwork = artworks.firstOrNull { art ->
-                        val artDir = getParentDirectory(art.url)
-                        val lastSubDir = artDir.substringAfterLast('/').lowercase()
-                        val artParentDir = getParentDirectory(artDir)
+                        val artDir = normalizeDirectory(art.url)
+                        val lastSubDir = artDir.substringAfterLast('/')
+                        val artParentDir = if (artDir.contains("/")) artDir.substringBeforeLast('/') else ""
                         artParentDir == videoParentDir && ARTWORK_DIR_NAMES.contains(lastSubDir)
                     }
                 }
 
-                // Parent directory poster/cover (e.g. for CD1/movie.avi)
+                // Any artwork in the same directory as fallback
+                if (candidateArtwork == null) {
+                    candidateArtwork = artworks.firstOrNull { art ->
+                        val artDir = normalizeDirectory(art.url)
+                        artDir == videoParentDir
+                    }
+                }
+
+                // Parent directory poster/cover (e.g. for CD1/movie.avi or nested folders)
                 if (candidateArtwork == null && videoGrandParentDir.isNotBlank()) {
                     candidateArtwork = artworks.firstOrNull { art ->
-                        val artBase = art.originalFilename.substringBeforeLast('.').lowercase()
-                        val artDir = getParentDirectory(art.url)
+                        val artBase = cleanName(art.originalFilename)
+                        val artDir = normalizeDirectory(art.url)
                         artDir == videoGrandParentDir && (artBase == videoBaseName || POSTER_NAMES.any { artBase.contains(it) })
                     }
                 }
 
-                matchedArtwork = candidateArtwork?.url
+                // Any artwork in the parent directory as secondary fallback
+                if (candidateArtwork == null && videoGrandParentDir.isNotBlank()) {
+                    candidateArtwork = artworks.firstOrNull { art ->
+                        val artDir = normalizeDirectory(art.url)
+                        artDir == videoGrandParentDir
+                    }
+                }
+
+                matchedArtwork = candidateArtwork?.url ?: pageArtworkUrl
             }
 
             // 2. Multi-location Subtitle Detection
             if (matchedSubtitle.isNullOrBlank()) {
                 // Same directory matching video name or video base name prefix
                 var candidateSubtitle = subtitles.firstOrNull { sub ->
-                    val subBase = sub.originalFilename.substringBeforeLast('.').lowercase()
-                    val subDir = getParentDirectory(sub.url)
+                    val subBase = cleanName(sub.originalFilename)
+                    val subDir = normalizeDirectory(sub.url)
                     subDir == videoParentDir && (subBase == videoBaseName || subBase.startsWith(videoBaseName))
                 }
 
                 // Subdirectory (e.g. subtitles/, subs/)
                 if (candidateSubtitle == null) {
                     candidateSubtitle = subtitles.firstOrNull { sub ->
-                        val subDir = getParentDirectory(sub.url)
-                        val lastSubDir = subDir.substringAfterLast('/').lowercase()
-                        val subParentDir = getParentDirectory(subDir)
+                        val subDir = normalizeDirectory(sub.url)
+                        val lastSubDir = subDir.substringAfterLast('/')
+                        val subParentDir = if (subDir.contains("/")) subDir.substringBeforeLast('/') else ""
                         subParentDir == videoParentDir && SUBTITLE_DIR_NAMES.contains(lastSubDir)
                     }
                 }
@@ -105,8 +124,8 @@ object MetadataAssociator {
                 // Parent directory
                 if (candidateSubtitle == null && videoGrandParentDir.isNotBlank()) {
                     candidateSubtitle = subtitles.firstOrNull { sub ->
-                        val subBase = sub.originalFilename.substringBeforeLast('.').lowercase()
-                        val subDir = getParentDirectory(sub.url)
+                        val subBase = cleanName(sub.originalFilename)
+                        val subDir = normalizeDirectory(sub.url)
                         subDir == videoGrandParentDir && (subBase == videoBaseName || subBase.startsWith(videoBaseName))
                     }
                 }
@@ -130,13 +149,22 @@ object MetadataAssociator {
         return "Unknown"
     }
 
-    private fun getParentDirectory(urlStr: String): String {
+    private fun cleanName(raw: String): String {
         return try {
-            val uri = URI(urlStr)
-            val path = uri.path ?: ""
-            if (path.contains("/")) path.substringBeforeLast('/') else ""
+            java.net.URLDecoder.decode(raw, "UTF-8").substringBeforeLast('.').lowercase().trim()
         } catch (_: Exception) {
-            if (urlStr.contains("/")) urlStr.substringBeforeLast('/') else ""
+            raw.substringBeforeLast('.').lowercase().trim()
+        }
+    }
+
+    private fun normalizeDirectory(urlStr: String): String {
+        return try {
+            val decoded = java.net.URLDecoder.decode(urlStr, "UTF-8")
+            val clean = decoded.substringBefore('?').substringBefore('#').trimEnd('/')
+            if (clean.contains("/")) clean.substringBeforeLast('/').lowercase() else ""
+        } catch (_: Exception) {
+            val clean = urlStr.substringBefore('?').substringBefore('#').trimEnd('/')
+            if (clean.contains("/")) clean.substringBeforeLast('/').lowercase() else ""
         }
     }
 }

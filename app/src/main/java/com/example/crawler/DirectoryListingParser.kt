@@ -48,12 +48,14 @@ object DirectoryListingParser {
                 val absoluteUri = URI(baseUrl).resolve(href)
                 val fullUrl = absoluteUri.toString()
                 val isDir = href.endsWith("/") || (!href.contains(".") && !href.startsWith("http"))
+                val thumb = link.select("img[src]").firstOrNull()?.absUrl("src")?.takeIf { it.isNotBlank() }
 
                 results.add(
                     ParsedLink(
                         url = fullUrl,
                         name = if (text.isNotBlank()) text.removeSuffix("/") else href.removeSuffix("/").substringAfterLast('/'),
-                        isDirectory = isDir
+                        isDirectory = isDir,
+                        thumbnail = thumb
                     )
                 )
             } catch (_: Exception) {}
@@ -66,5 +68,6 @@ object DirectoryListingParser {
 data class ParsedLink(
     val url: String,
     val name: String,
-    val isDirectory: Boolean
+    val isDirectory: Boolean,
+    val thumbnail: String? = null
 )

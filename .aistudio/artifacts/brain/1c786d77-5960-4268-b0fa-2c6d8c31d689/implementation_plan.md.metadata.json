@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for fixing multiple audio track selection in the video player, resolving cover artwork fetching and association from directories, and introducing an in-built web browser next to the home search bar with video stream sniffing and one-tap import into the library.",
+  "updatedAt":  "2026-10-31T18:12:46.312995400Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

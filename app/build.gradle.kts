@@ -115,6 +115,7 @@ dependencies {
   implementation(libs.androidx.media3.ui)
   implementation(libs.androidx.media3.common)
   implementation(libs.androidx.media3.session)
+  implementation(libs.jellyfin.media3.ffmpeg.decoder)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.jsoup)
   implementation(libs.commons.net)

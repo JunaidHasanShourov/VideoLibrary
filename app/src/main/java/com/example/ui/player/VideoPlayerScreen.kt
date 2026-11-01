@@ -377,9 +377,8 @@ fun VideoPlayerScreen(
                 enableAudioTrackPlaybackParams: Boolean
             ): AudioSink? {
                 return DefaultAudioSink.Builder(context)
-                    .setEnableFloatOutput(true)
-                    .setEnableAudioTrackPlaybackParams(true)
-                    .setAudioCapabilities(AudioCapabilities.getCapabilities(context))
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
             }
         }.apply {

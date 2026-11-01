@@ -88,4 +88,16 @@ class ExampleRobolectricTest {
         assertEquals(4, com.example.ui.player.SubtitleSize.values().size)
         assertTrue(com.example.ui.player.SubtitleSize.LARGE.sizeSp > com.example.ui.player.SubtitleSize.SMALL.sizeSp)
     }
+
+    @Test
+    fun `ffmpeg audio renderer is available on classpath`() {
+        val clazz = Class.forName("androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer")
+        org.junit.Assert.assertNotNull(clazz)
+        val constructor = clazz.getConstructor(
+            android.os.Handler::class.java,
+            androidx.media3.exoplayer.audio.AudioRendererEventListener::class.java,
+            androidx.media3.exoplayer.audio.AudioSink::class.java
+        )
+        org.junit.Assert.assertNotNull(constructor)
+    }
 }

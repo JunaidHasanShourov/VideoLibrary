@@ -1,4 +1,4 @@
-# 🎬 Movie Library - CineVault
+# 🎬 Movie Library
 
 > A modern and simple movie library app for organizing, browsing, and managing your favorite movies in one place.
 
@@ -57,7 +57,7 @@ The project focuses on a smooth interface, simple navigation, and a pleasant vie
 ### 1. Clone the repository
 
 ```bash
-https://github.com/JunaidHasanShourov/Movie-Library.git
+https://github.com/JunaidHasanShourov/MovieLibrary.git
 ```
 
 ### 2. Open the project

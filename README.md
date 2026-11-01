@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white">
-  <!-- <img src="https://img.shields.io/badge/Status-Development-orange?style=for-the-badge"> -->
+  <!-- <img src="https://img.shields.io/badge/Status-Development-orange?style=for-the-badge"> --> 
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge">
 </p>
 

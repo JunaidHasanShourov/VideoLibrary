@@ -3,12 +3,12 @@
 > A modern and simple movie library app for organizing, browsing, and managing your favorite movies in one place.
 
 <p align="center">
-  <img src="app/src/main/res/drawable/video_library_github_cover.jpg" alt="Movie Library Banner" width="900">
+  <img src="app/src/main/res/drawable/video_library_github_cover.jpg" alt="Movie Library Banner" width="600">
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white">
-  <img src="https://img.shields.io/badge/Status-Development-orange?style=for-the-badge">
+  <!-- <img src="https://img.shields.io/badge/Status-Development-orange?style=for-the-badge"> -->
   <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge">
 </p>
 
@@ -22,27 +22,17 @@ The project focuses on a smooth interface, simple navigation, and a pleasant vie
 
 ## 🚀 Features
 
-- 🎞️ Add Videos from any of links/ftp/databases/storage servers etc & custom links attachable with many more...
-- 🌐 Fetching automatically video links and adding to library with title, Arts/Covers, subtitles etc
-- 🌐 Inbuilt browser with advanced tools
-- 🎞️ Browse movie collection
-- 🔎 Search movies
-- ⭐ Favorites
-- 📚 Movie categories
-- 🎬 Movie details
-- 🖼️ Movie posters & artwork
-- 📱 Modern responsive UI
-- 🌙 Clean dark-themed interface
-- ⚡ Smooth navigation and interactions
-
-
-## 🖼️ Preview
-
-<p align="center">
-  <img src="assets/home.png" width="250">
-  <img src="assets/details.png" width="250">
-  <img src="assets/favorites.png" width="250">
-</p>
+>- 🎞️ Add Videos from any of links/ftp/databases/storage servers etc & custom links attachable with many more...
+>- 🌐 Inbuilt browser with advanced tools & Fetching automatically video links and adding to library with title, Arts/Covers, subtitles etc.
+>- 🎞️ Browse movie collection
+>- 🔎 Search movies
+>- ⭐ Favorites
+>- 📚 Movie categories
+>- 🎬 Movie details
+>- 🖼️ Movie posters & artwork
+>- 📱 Modern responsive UI
+>- 🌙 Clean dark-themed interface
+>- ⚡ Smooth navigation and interactions
 
 ## 🛠️ Built With
 

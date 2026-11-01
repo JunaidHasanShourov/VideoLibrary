@@ -100,4 +100,36 @@ class ExampleRobolectricTest {
         )
         org.junit.Assert.assertNotNull(constructor)
     }
+
+    @Test
+    fun `purgeSampleData deletes sample items from database`() = kotlinx.coroutines.runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(context, com.example.data.database.AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val repo = com.example.repository.VideoRepository(db)
+        repo.insertVideo(
+            com.example.data.database.VideoEntity(
+                title = "Big Buck Bunny",
+                originalFilename = "BigBuckBunny.mp4",
+                sourceUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+                format = "mp4"
+            )
+        )
+        repo.insertVideo(
+            com.example.data.database.VideoEntity(
+                title = "My Personal Family Vacation",
+                originalFilename = "family_vacation.mp4",
+                sourceUrl = "https://mycloud.home/family_vacation.mp4",
+                format = "mp4"
+            )
+        )
+        assertEquals(2, repo.getVideoCount())
+        repo.purgeSampleData()
+        assertEquals(1, repo.getVideoCount())
+        val remaining = repo.getAllVideosDirect()
+        assertEquals("My Personal Family Vacation", remaining[0].title)
+        db.close()
+    }
 }
+

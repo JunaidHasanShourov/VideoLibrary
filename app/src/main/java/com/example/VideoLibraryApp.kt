@@ -38,7 +38,7 @@ class VideoLibraryApp : Application(), ImageLoaderFactory {
         userPreferences = UserPreferences(this)
 
         CoroutineScope(Dispatchers.IO).launch {
-            videoRepository.populateSampleDataIfEmpty()
+            videoRepository.purgeSampleData()
         }
     }
 

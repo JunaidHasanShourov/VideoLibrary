@@ -149,40 +149,24 @@ fun AddVideoScreen(
                         if (filename.length > 3) title = FilenameCleaner.clean(filename)
                     }
                 },
-                placeholder = { Text("https://example.com/media/sample.mp4") },
+                placeholder = { Text("https://example.com/media/video.mp4") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("add_video_url_input"),
                 singleLine = true
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { validateAndProbe() },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
-                    modifier = Modifier.testTag("validate_url_btn")
-                ) {
-                    if (isProbing) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 2.dp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-                    Text("Validate & Probe")
+            Button(
+                onClick = { validateAndProbe() },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet),
+                modifier = Modifier.testTag("validate_url_btn")
+            ) {
+                if (isProbing) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = androidx.compose.ui.graphics.Color.White, strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(6.dp))
                 }
-
-                // Quick pre-fill button for testing
-                OutlinedButton(
-                    onClick = {
-                        url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4"
-                        title = "Subaru Outback On Street and Dirt"
-                        category = "Automotive"
-                        description = "Automotive commercial showcasing vehicle performance across mixed terrain."
-                        artworkUrl = "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800"
-                    },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Insert Test Stream")
-                }
+                Text("Validate & Probe")
             }
 
             // Probe Result Feedback

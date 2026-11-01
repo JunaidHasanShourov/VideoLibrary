@@ -3,7 +3,7 @@
 > A modern and simple movie library app for organizing, browsing, and managing your favorite movies in one place.
 
 <p align="center">
-  <img src="app/src/main/res/drawable/video-library-github-cover.jpg" alt="Movie Library Banner" width="900">
+  <img src="app/src/main/res/drawable/video_library_github_cover.jpg" alt="Movie Library Banner" width="900">
 </p>
 
 <p align="center">

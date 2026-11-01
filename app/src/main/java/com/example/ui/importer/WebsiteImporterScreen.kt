@@ -152,19 +152,6 @@ fun WebsiteImporterScreen(
                 enabled = !isCrawling
             )
 
-            // Quick Demo Pre-fill
-            OutlinedButton(
-                onClick = {
-                    rootUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/"
-                    maxDepth = 2f
-                    maxPages = 50f
-                },
-                shape = RoundedCornerShape(12.dp),
-                enabled = !isCrawling
-            ) {
-                Text("Insert Demo Public Media Repository")
-            }
-
             Spacer(modifier = Modifier.height(4.dp))
 
             // Crawler Settings Card

@@ -174,9 +174,9 @@ fun BrowserScreen(
                 icon = Icons.Default.TravelExplore
             ),
             BrowserShortcut(
-                title = "Open Media Samples",
-                subtitle = "Big Buck Bunny, Sintel, Tears of Steel",
-                url = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/",
+                title = "Vimeo Watch",
+                subtitle = "Curated indie films, animations & shorts",
+                url = "https://vimeo.com/watch",
                 icon = Icons.Default.PlayArrow
             ),
             BrowserShortcut(

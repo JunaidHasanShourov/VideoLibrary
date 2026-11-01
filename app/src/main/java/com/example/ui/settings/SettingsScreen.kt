@@ -93,7 +93,6 @@ fun SettingsScreen() {
     val extensions by ExtensionManager.extensions.collectAsState()
 
     var showClearDataDialog by remember { mutableStateOf(false) }
-    var showReloadSampleDialog by remember { mutableStateOf(false) }
 
     var showImportDialog by remember { mutableStateOf(false) }
     var selectedImportUri by remember { mutableStateOf<Uri?>(null) }
@@ -381,26 +380,13 @@ fun SettingsScreen() {
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
+                    Button(
+                        onClick = { showClearDataDialog = true },
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Button(
-                            onClick = { showReloadSampleDialog = true },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Load Samples")
-                        }
-
-                        Button(
-                            onClick = { showClearDataDialog = true },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Text("Clear Videos")
-                        }
+                        Text("Clear Library Data")
                     }
                 }
             }
@@ -549,31 +535,6 @@ fun SettingsScreen() {
         )
     }
 
-    if (showReloadSampleDialog) {
-        AlertDialog(
-            onDismissRequest = { showReloadSampleDialog = false },
-            title = { Text("Load Sample Media?") },
-            text = { Text("Pre-populates your library with high-quality public domain open-source movies (Big Buck Bunny, Tears of Steel, Elephants Dream, etc.).") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            repository.populateSampleDataIfEmpty()
-                            showReloadSampleDialog = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = ElectricViolet)
-                ) {
-                    Text("Load Samples")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showReloadSampleDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 }
 
 @Composable
